@@ -2,7 +2,9 @@ import pyautogui
 import time 
 import os
 from google import genai
-
+import pyperclip  
+# pip install google-genai
+# pip install pyperclip
 cliente = genai.Client()
 response = cliente.models.generate_content(
     model='gemini-3.6-flash',
@@ -24,12 +26,14 @@ time.sleep(1)
 pyautogui.hotkey('ctrl','a')
 time.sleep(1)
 pyautogui.press('delete')
-texto = '''---RELATORIO DE CADASTRO
-Cliente: Marcos da Silva
-Status: Aprovado
-Processo concluído com sucesso.
-'''
-pyautogui.write(response.text, interval=0.005)
+# texto = '''---RELATORIO DE CADASTRO
+# Cliente: Marcos da Silva
+# Status: Aprovado
+# Processo concluído com sucesso.
+# '''
+pyperclip.copy(response.text)
+pyautogui.hotkey('ctrl', 'v')
+# pyautogui.write(response.text, interval=0.05)
 time.sleep(1)
 print('Salvando Arquivo')
 pyautogui.hotkey('ctrl','s')
