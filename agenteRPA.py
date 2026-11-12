@@ -1,40 +1,18 @@
 import keyboard
 import mss
 import time
+import pickle
+import os
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
 
-# 1. COORDENADAS DOS RECEPTORES
-X_ESQUERDA = 782
-X_BAIXO = 906
-X_CIMA = 1029
-X_DIREITA = 1156
 
-# 2. CONFIGURAÇÃO DA LEITURA 
+X_ESQUERDA, X_BAIXO, X_CIMA, X_DIREITA = 782, 906, 1029, 1156
 Y_SETAS_ORIGINAL = 112
 OFFSET = 35 
 Y_LEITURA = Y_SETAS_ORIGINAL + OFFSET 
 
-TECLAS = {
-    'esquerda': 'd',
-    'baixo': 'f',
-    'cima': 'j',
-    'direita': 'k'
-}
-
-estado_teclas = {
-    'esquerda': False,
-    'baixo': False,
-    'cima': False,
-    'direita': False
-}
-
-ultima_vez_visto = {
-    'esquerda': 0.0,
-    'baixo': 0.0,
-    'cima': 0.0,
-    'direita': 0.0
-}
-
-TOLERANCIA_SOLTAR = 0.08 
+TECLAS = ['d', 'f', 'j', 'k'] 
 
 regiao_captura = {
     "top": Y_LEITURA - 5, 
@@ -43,67 +21,136 @@ regiao_captura = {
     "height": 10
 }
 
-print(f"Bot Iniciado Pressione 'ESC' para parar.")
-time.sleep(2) 
+ARQUIVO_DADOS = "dataset_fnf.pkl"
+ARQUIVO_MODELO = "modelo_ia_fnf.pkl"
 
-with mss.mss() as sct:
-    while not keyboard.is_pressed('esc'):
-        tela = sct.grab(regiao_captura)
 
-        pixel_esq = tela.pixel(5, 5)
-        pixel_bai = tela.pixel(X_BAIXO - X_ESQUERDA + 5, 5)
-        pixel_cim = tela.pixel(X_CIMA - X_ESQUERDA + 5, 5)
-        pixel_dir = tela.pixel(X_DIREITA - X_ESQUERDA + 5, 5)
+def extrair_features(tela):
+    r_esq, g_esq, b_esq = tela.pixel(5, 5)
+    r_bai, g_bai, b_bai = tela.pixel(X_BAIXO - X_ESQUERDA + 5, 5)
+    r_cim, g_cim, b_cim = tela.pixel(X_CIMA - X_ESQUERDA + 5, 5)
+    r_dir, g_dir, b_dir = tela.pixel(X_DIREITA - X_ESQUERDA + 5, 5)
+    
+    
+    return [r_esq, g_esq, b_esq, r_bai, g_bai, b_bai, r_cim, g_cim, b_cim, r_dir, g_dir, b_dir]
 
-        r_esq, g_esq, b_esq = pixel_esq 
-        r_bai, g_bai, b_bai = pixel_bai 
-        r_cim, g_cim, b_cim = pixel_cim 
-        r_dir, g_dir, b_dir = pixel_dir 
 
-        agora = time.time()
+def ler_teclado():
+    
+    return [
+        1 if keyboard.is_pressed('d') else 0,
+        1 if keyboard.is_pressed('f') else 0,
+        1 if keyboard.is_pressed('j') else 0,
+        1 if keyboard.is_pressed('k') else 0
+    ]
+
+
+def coletar_dados():
+    print("\n[MODO GRAVAÇÃO] Inicie uma música e jogue!")
+    print("A IA vai gravar suas jogadas. Pressione 'ESC' para parar e salvar.")
+    time.sleep(2)
+    
+    
+    if os.path.exists(ARQUIVO_DADOS):
+        with open(ARQUIVO_DADOS, 'rb') as f:
+            dados = pickle.load(f)
+            X_dados = dados['X']
+            Y_dados = dados['Y']
+        print(f"Banco de dados anterior carregado ({len(X_dados)} frames). Adicionando novos dados...")
+    else:
+        X_dados = [] 
+        Y_dados = [] 
+    
+    with mss.mss() as sct:
+        while not keyboard.is_pressed('esc'):
+            tela = sct.grab(regiao_captura)
+            features = extrair_features(tela)
+            teclas = ler_teclado()
+            
+            X_dados.append(features)
+            Y_dados.append(teclas)
+            time.sleep(0.01) 
+            
+    
+    with open(ARQUIVO_DADOS, 'wb') as f:
+        pickle.dump({'X': X_dados, 'Y': Y_dados}, f)
+    print(f"Dados salvos! O dataset agora possui {len(X_dados)} frames no total.")
+
+
+def treinar_modelo():
+    if not os.path.exists(ARQUIVO_DADOS):
+        print("Erro: Nenhum dado encontrado. Grave primeiro (Opção 1).")
+        return
         
-        # ================= ESQUERDA (Roxo)  =================
-        if r_esq > 140 and b_esq > 120 and g_esq < 120:
-            ultima_vez_visto['esquerda'] = agora 
-            if not estado_teclas['esquerda']:
-                keyboard.press(TECLAS['esquerda'])
-                estado_teclas['esquerda'] = True
-        else:
-            if estado_teclas['esquerda'] and (agora - ultima_vez_visto['esquerda'] >= TOLERANCIA_SOLTAR):
-                keyboard.release(TECLAS['esquerda'])
-                estado_teclas['esquerda'] = False
+    print("\n[MODO TREINO] Lendo seus dados e treinando a IA...")
+    with open(ARQUIVO_DADOS, 'rb') as f:
+        dados = pickle.load(f)
+        
+    X_dados = np.array(dados['X'])
+    Y_dados = np.array(dados['Y'])
+    
+    
+    modelo = RandomForestClassifier(n_estimators=10, random_state=42, n_jobs=-1)
+    modelo.fit(X_dados, Y_dados)
+    
+    
+    with open(ARQUIVO_MODELO, 'wb') as f:
+        pickle.dump(modelo, f)
+    print("Treinamento concluído e modelo salvo com sucesso!")
 
-        # ================= BAIXO (Ciano) =================
-        if g_bai > 160 and b_bai > 160 and r_bai < 120:
-            ultima_vez_visto['baixo'] = agora
-            if not estado_teclas['baixo']:
-                keyboard.press(TECLAS['baixo'])
-                estado_teclas['baixo'] = True
-        else:
-            if estado_teclas['baixo'] and (agora - ultima_vez_visto['baixo'] >= TOLERANCIA_SOLTAR):
-                keyboard.release(TECLAS['baixo'])
-                estado_teclas['baixo'] = False
 
-        # ================= CIMA (Verde) =================
-        if g_cim > 180 and r_cim < 120 and b_cim < 120:
-            ultima_vez_visto['cima'] = agora
-            if not estado_teclas['cima']:
-                keyboard.press(TECLAS['cima'])
-                estado_teclas['cima'] = True
-        else:
-            if estado_teclas['cima'] and (agora - ultima_vez_visto['cima'] >= TOLERANCIA_SOLTAR):
-                keyboard.release(TECLAS['cima'])
-                estado_teclas['cima'] = False
+def ia_jogar():
+    if not os.path.exists(ARQUIVO_MODELO):
+        print("Erro: A IA ainda não foi treinada. Treine primeiro (Opção 2).")
+        return
+        
+    with open(ARQUIVO_MODELO, 'rb') as f:
+        modelo = pickle.load(f)
+        
+    estado_atual = [0, 0, 0, 0]
+    
+    print("\n[MODO IA JOGANDO] A Inteligência Artificial assumiu o controle!")
+    print("Pressione 'ESC' para parar.")
+    time.sleep(2)
+    
+    with mss.mss() as sct:
+        while not keyboard.is_pressed('esc'):
+            tela = sct.grab(regiao_captura)
+            features = extrair_features(tela)
+            
+            
+            previsao = modelo.predict([features])[0]
+            
+            
+            for i in range(4):
+                if previsao[i] == 1 and estado_atual[i] == 0:
+                    keyboard.press(TECLAS[i])
+                    estado_atual[i] = 1
+                elif previsao[i] == 0 and estado_atual[i] == 1:
+                    keyboard.release(TECLAS[i])
+                    estado_atual[i] = 0
+                    
+            
+            time.sleep(0.01)
 
-        # ================= DIREITA (Vermelho) =================
-        if r_dir > 180 and g_dir < 120 and b_dir < 120:
-            ultima_vez_visto['direita'] = agora
-            if not estado_teclas['direita']:
-                keyboard.press(TECLAS['direita'])
-                estado_teclas['direita'] = True
-        else:
-            if estado_teclas['direita'] and (agora - ultima_vez_visto['direita'] >= TOLERANCIA_SOLTAR):
-                keyboard.release(TECLAS['direita'])
-                estado_teclas['direita'] = False
 
-        time.sleep(0.001)
+if __name__ == "__main__":
+    while True:
+        print("\n=== BOT IA - FRIDAY NIGHT FUNKIN ===")
+        print("1. Gravar Gameplay (Ensinar a IA)")
+        print("2. Treinar IA com os dados gravados")
+        print("3. Deixar a IA jogar")
+        print("4. Sair")
+        
+        escolha = input("Escolha uma opção: ")
+        
+        if escolha == '1':
+            coletar_dados()
+        elif escolha == '2':
+            treinar_modelo()
+        elif escolha == '3':
+            ia_jogar()
+        elif escolha == '4':
+            break
+        else:
+            print("Opção inválida.")
